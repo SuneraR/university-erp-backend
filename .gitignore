@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build output
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# SQL Server backup files
+*.bak
+*.trn
+
+# Uploaded files
+uploads/
+public/uploads/
+
+# Cache
+.cache/
+
+# Testing
+.nyc_output/
+
+# PM2
+.pm2/
+
+# Optional lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
