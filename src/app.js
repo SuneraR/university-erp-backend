@@ -4,6 +4,7 @@ import morgan from 'morgan';
 
 import studentRoutes from './routes/student.routes.js';
 import miscRoutes from './routes/misc.student.routes.js';
+import lecturerRoutes from './routes/lecturer.routes.js';
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use(morgan('dev'));
 
 app.use('/api/students', studentRoutes);
 app.use('/api', miscRoutes);
+app.use('/api/lecturers', lecturerRoutes);
 
 app.get('/health', (_req, res) =>
   res.json({ status: 'ok', timestamp: new Date() })
