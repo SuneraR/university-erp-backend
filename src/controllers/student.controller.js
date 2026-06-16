@@ -180,3 +180,282 @@ export const deleteStudent = async (req, res) => {
     handleError(res, err, 'deleteStudent');
   }
 };
+
+export const getStudentStats = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .execute('sp_GetStudentStats');
+
+    res.json({
+      success: true,
+      data: {
+        overview: result.recordsets[0][0],
+        byFaculty: result.recordsets[1],
+      },
+    });
+  } catch (err) {
+    handleError(res, err, 'getStudentStats');
+  }
+};
+
+export const getStudentSummary = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .execute('sp_GetStudentSummary');
+
+    res.json({
+      success: true,
+      data: {
+        profile: result.recordsets[0][0],
+        activeEnrollments: result.recordsets[1][0],
+        attendance: result.recordsets[2][0],
+        payments: result.recordsets[3][0],
+      },
+    });
+  } catch (err) {
+    handleError(res, err, 'getStudentSummary');
+  }
+};
+
+export const getEnrollments = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('Semester', sql.Int, req.query.semester ? parseInt(req.query.semester) : null)
+      .execute('sp_GetStudentEnrollments');
+
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    handleError(res, err, 'getEnrollments');
+  }
+};
+
+export const enrollStudent = async (req, res) => {
+  try {
+    const { courseId, semester } = req.body;
+
+    if (!courseId || !semester) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId and semester are required',
+      });
+    }
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('CourseID', sql.VarChar(20), courseId)
+      .input('Semester', sql.Int, parseInt(semester))
+      .output('NewEnrollmentID', sql.Int)
+      .execute('sp_EnrollStudent');
+
+    res.status(201).json({
+      success: true,
+      message: 'Student enrolled successfully',
+      enrollmentId: result.output.NewEnrollmentID,
+    });
+  } catch (err) {
+    handleError(res, err, 'enrollStudent');
+  }
+};
+
+export const dropEnrollment = async (req, res) => {
+  try {
+    const { courseId, semester } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('CourseID', sql.VarChar(20), courseId)
+      .input('Semester', sql.Int, parseInt(semester))
+      .execute('sp_DropEnrollment');
+
+    res.json({ success: true, message: 'Enrollment removed successfully' });
+  } catch (err) {
+    handleError(res, err, 'dropEnrollment');
+  }
+};
+
+export const getAttendance = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('Semester', sql.Int, req.query.semester ? parseInt(req.query.semester) : null)
+      .execute('sp_GetStudentAttendance');
+
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    handleError(res, err, 'getAttendance');
+  }
+};
+
+export const markAttendance = async (req, res) => {
+  try {
+    const { enrollmentId, sessionDate, status } = req.body;
+
+    if (!enrollmentId || !sessionDate || !status) {
+      return res.status(400).json({
+        success: false,
+        message: 'enrollmentId, sessionDate, status required',
+      });
+    }
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input('EnrollmentID', sql.Int, enrollmentId)
+      .input('SessionDate', sql.Date, sessionDate)
+      .input('Status', sql.NVarChar(10), status)
+      .execute('sp_MarkAttendance');
+
+    res.json({ success: true, message: 'Attendance marked successfully' });
+  } catch (err) {
+    handleError(res, err, 'markAttendance');
+  }
+};
+
+export const getResults = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .execute('sp_GetStudentResults');
+
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    handleError(res, err, 'getResults');
+  }
+};
+
+export const upsertResult = async (req, res) => {
+  try {
+    const { examId, studentId, score, grade, gpaPoint } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input('ExamID', sql.VarChar(20), examId)
+      .input('StudentID', sql.VarChar(20), studentId)
+      .input('Score', sql.Decimal(5, 2), score)
+      .input('Grade', sql.NVarChar(5), grade || null)
+      .input('GpaPoint', sql.Decimal(3, 2), gpaPoint || null)
+      .execute('sp_UpsertResult');
+
+    res.json({ success: true, message: 'Result saved successfully' });
+  } catch (err) {
+    handleError(res, err, 'upsertResult');
+  }
+};
+
+export const getPayments = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('Status', sql.NVarChar(20), req.query.status || null)
+      .execute('sp_GetStudentPayments');
+
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    handleError(res, err, 'getPayments');
+  }
+};
+
+export const createPayment = async (req, res) => {
+  try {
+    const {
+      amount, type, semester, paymentDate, method, status,
+    } = req.body;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('Amount', sql.Decimal(10, 2), amount)
+      .input('Type', sql.NVarChar(20), type)
+      .input('Semester', sql.NVarChar(5), semester || null)
+      .input('PaymentDate', sql.Date, paymentDate || null)
+      .input('Method', sql.NVarChar(50), method || null)
+      .input('Status', sql.NVarChar(20), status || 'Pending')
+      .output('NewPaymentID', sql.VarChar(20))
+      .execute('sp_CreatePayment');
+
+    res.status(201).json({
+      success: true,
+      paymentId: result.output.NewPaymentID,
+    });
+  } catch (err) {
+    handleError(res, err, 'createPayment');
+  }
+};
+
+export const updatePaymentStatus = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const { status, paymentDate, method } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input('PaymentID', sql.VarChar(20), paymentId)
+      .input('Status', sql.NVarChar(20), status)
+      .input('PaymentDate', sql.Date, paymentDate || null)
+      .input('Method', sql.NVarChar(50), method || null)
+      .execute('sp_UpdatePaymentStatus');
+
+    res.json({ success: true, message: 'Payment updated successfully' });
+  } catch (err) {
+    handleError(res, err, 'updatePaymentStatus');
+  }
+};
+
+export const getScholarships = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .execute('sp_GetStudentScholarships');
+
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    handleError(res, err, 'getScholarships');
+  }
+};
+
+export const addScholarship = async (req, res) => {
+  try {
+    const { name, amount, type, status } = req.body;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('Name', sql.NVarChar(150), name)
+      .input('Amount', sql.Decimal(10, 2), amount || null)
+      .input('Type', sql.NVarChar(20), type || null)
+      .input('Status', sql.NVarChar(20), status || 'Active')
+      .output('NewID', sql.Int)
+      .execute('sp_AddScholarship');
+
+    res.status(201).json({
+      success: true,
+      scholarshipId: result.output.NewID,
+    });
+  } catch (err) {
+    handleError(res, err, 'addScholarship');
+  }
+};

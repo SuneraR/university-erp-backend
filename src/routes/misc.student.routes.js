@@ -10,12 +10,12 @@ import * as ctrl from '../controllers/student.controller.js';
 const router = express.Router();
 
 // POST /api/attendance
-// router.post('/attendance', ctrl.markAttendance);
+router.post('/attendance', ctrl.markAttendance);
 
-// // POST /api/results
-// router.post('/results', ctrl.upsertResult);
+// POST /api/results
+router.post('/results', ctrl.upsertResult);
 
-// // PATCH /api/payments/:paymentId
-// router.patch('/payments/:paymentId', ctrl.updatePaymentStatus);
+// PATCH /api/payments/:paymentId
+router.patch('/payments/:paymentId', ctrl.updatePaymentStatus);
 
 export default router;
