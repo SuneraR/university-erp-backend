@@ -1,6 +1,5 @@
-// src/config/db.js
-import sql from 'mssql';
-import dotenv from 'dotenv';
+import sql from "mssql";
+import dotenv from "dotenv";
 dotenv.config();
 
 const config = {
@@ -8,17 +7,25 @@ const config = {
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
-  port: parseInt(process.env.DB_PORT || '1433'),
+  port: parseInt(process.env.DB_PORT || "1433"),
   options: {
-    encrypt: true,            // Azure SQL = true, local = false
+    encrypt: false,
     trustServerCertificate: true,
   },
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000,
+  },
 };
 
 let pool;
-export async function getPool() {
-  if (!pool) pool = await sql.connect(config);
+
+export const getPool = async () => {
+  if (!pool) {
+    pool = await sql.connect(config);
+  }
   return pool;
-}
+};
+
 export { sql };
