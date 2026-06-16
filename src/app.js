@@ -4,6 +4,7 @@ import morgan from 'morgan';
 
 import studentRoutes from './routes/student.routes.js';
 import miscRoutes from './routes/misc.student.routes.js';
+import financeRoutes from './routes/finance.routes.js';
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.json());
 app.use(morgan('dev'));
 
 app.use('/api/students', studentRoutes);
+app.use('/api/finance', financeRoutes);
 app.use('/api', miscRoutes);
 
 app.get('/health', (_req, res) =>
