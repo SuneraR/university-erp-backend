@@ -64,7 +64,7 @@ CREATE OR ALTER PROCEDURE sp_CreatePayment
     @StudentID VARCHAR(20),
     @Amount DECIMAL(10, 2),
     @Type NVARCHAR(20),
-    @Semester NVARCHAR(5) = NULL,
+    @Semester NVARCHAR(10) = NULL,
     @PaymentDate DATE = NULL,
     @Method NVARCHAR(50) = NULL,
     @Status NVARCHAR(20) = 'Pending',

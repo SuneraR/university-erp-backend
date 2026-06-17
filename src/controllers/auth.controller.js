@@ -22,6 +22,15 @@ function refreshTokenExpiryDate() {
     return d;
 }
 
+function cookieOptions() {
+    return {
+        httpOnly: true,
+        secure:   process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge:   parseInt(process.env.JWT_REFRESH_DAYS || '7', 10) * 24 * 60 * 60 * 1000, // ← synced with env
+    };
+}
+
 // ── Build role-specific profile ────────────────────────────────────────────────
 async function getRoleProfile(pool, userId, role) {
     if (role === 'Student') {
@@ -41,83 +50,54 @@ async function getRoleProfile(pool, userId, role) {
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  POST /auth/register-admin
+//  Now uses sp_CreateAdminUser instead of inline INSERT
 // ══════════════════════════════════════════════════════════════════════════════
 export const registerAdmin = async (req, res) => {
     try {
-        const {
-            name,
-            email,
-            password,
-            phone,
-            gender,
-            dob,
-            address
-        } = req.body;
+        const { name, email, password, phone, gender, dob, address } = req.body;
 
         if (!name || !email || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'name, email, password are required'
+                message: 'name, email, and password are required',
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password must be at least 8 characters',
             });
         }
 
         const pool = await getPool();
+        const hash = await bcrypt.hash(password, 12); // ← consistent cost factor
 
-        // 1. check email exists
-        const exists = await pool.request()
-            .input('email', sql.NVarChar(150), email)
-            .query('SELECT 1 FROM Users WHERE Email = @email');
-
-        if (exists.recordset.length) {
-            return res.status(400).json({
-                success: false,
-                message: 'Email already exists'
-            });
-        }
-
-        // 2. hash password
-        const hash = await bcrypt.hash(password, 10);
-
-        // 3. insert admin
         const result = await pool.request()
-            .input('Email', sql.NVarChar(150), email)
+            .input('Email',        sql.NVarChar(150), email)
             .input('PasswordHash', sql.NVarChar(255), hash)
-            .input('Phone', sql.NVarChar(30), phone || null)
-            .input('Name', sql.NVarChar(150), name)
-            .input('Gender', sql.NVarChar(10), gender || null)
-            .input('DOB', sql.Date, dob || null)
-            .input('Address', sql.NVarChar(255), address || null)
-            .input('AvatarCode', sql.NVarChar(5), 'AD')
-            .input('Role', sql.NVarChar(20), 'Admin')
-            .input('IsActive', sql.Bit, 1)
-            .query(`
-                INSERT INTO Users (
-                    Email, PasswordHash, Phone, Name,
-                    Gender, DOB, Address, AvatarCode,
-                    Role, IsActive
-                )
-                OUTPUT INSERTED.UserID
-                VALUES (
-                    @Email, @PasswordHash, @Phone, @Name,
-                    @Gender, @DOB, @Address, @AvatarCode,
-                    @Role, @IsActive
-                )
-            `);
+            .input('Name',         sql.NVarChar(150), name)
+            .input('Phone',        sql.NVarChar(30),  phone   || null)
+            .input('Gender',       sql.NVarChar(10),  gender  || null)
+            .input('DOB',          sql.Date,          dob     || null)
+            .input('Address',      sql.NVarChar(255), address || null)
+            .execute('sp_CreateAdminUser'); // ← SP handles email check + INSERT
 
         const userId = result.recordset[0].UserID;
 
         return res.status(201).json({
             success: true,
             message: 'Admin account created successfully',
-            userId
+            userId,
         });
 
     } catch (err) {
+        // sp_CreateAdminUser raises 'Email already exists' as error
+        if (err.message?.includes('Email already exists')) {
+            return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
         console.error('registerAdmin:', err);
-        return res.status(500).json({
-            success: false,
-            message: err.message
-        });
+        return res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
@@ -131,98 +111,70 @@ export const login = async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'Email and password are required'
+                message: 'Email and password are required',
             });
         }
 
         const pool = await getPool();
 
-        // 1. Fetch user
         const userResult = await pool.request()
             .input('email', sql.VarChar(255), email)
             .execute('sp_GetUserByEmail');
 
         if (!userResult.recordset.length) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid email or password'
-            });
+            return res.status(401).json({ success: false, message: 'Invalid email or password' });
         }
 
         const user = userResult.recordset[0];
 
-        // 2. Check account active
-        if (user.IsActive === 0) {
-            return res.status(403).json({
-                success: false,
-                message: 'Account is not activated'
-            });
+        if (!user.IsActive) {
+            return res.status(403).json({ success: false, message: 'Account is not activated' });
         }
 
-        // 3. Verify password
         const valid = await bcrypt.compare(password, user.PasswordHash);
         if (!valid) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid email or password'
-            });
+            return res.status(401).json({ success: false, message: 'Invalid email or password' });
         }
 
-        // 4. Fetch role profile
-        const profile = await getRoleProfile(pool, user.UserID, user.Role);
+        const profile = await getRoleProfile(pool, user.UserID, user.role);
 
-        // 5. Token payload
         const tokenPayload = {
             userId: user.UserID,
-            email: user.Email,
-            role: user.Role,
-            ...(profile?.StudentID && { studentId: profile.StudentID }),
+            email:  user.email,       // ← lowercase: matches sp_GetUserByEmail column
+            role:   user.role,        // ← lowercase: matches sp_GetUserByEmail column
+            ...(profile?.StudentID  && { studentId:  profile.StudentID }),
             ...(profile?.LecturerID && { lecturerId: profile.LecturerID }),
         };
 
-        const accessToken = generateAccessToken(tokenPayload);
+        const accessToken  = generateAccessToken(tokenPayload);
         const refreshToken = generateRefreshToken({ userId: user.UserID });
 
-        // 6. Save refresh token
         await pool.request()
-            .input('UserID', sql.Int, user.UserID)
-            .input('token', sql.VarChar(512), refreshToken)
-            .input('expiresAt', sql.DateTime, refreshTokenExpiryDate())
+            .input('UserID',    sql.Int,          user.UserID)
+            .input('token',     sql.VarChar(512),  refreshToken)
+            .input('expiresAt', sql.DateTime,      refreshTokenExpiryDate())
             .execute('sp_StoreRefreshToken');
 
-        // 7. Set cookie
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
+        res.cookie('refreshToken', refreshToken, cookieOptions()); // ← shared helper
 
-        // 8. Remove sensitive data
         const { PasswordHash, ...safeUser } = user;
 
         return res.json({
             success: true,
             message: 'Login successful',
             accessToken,
-            user: {
-                ...safeUser,
-                profile
-            }
+            user: { ...safeUser, profile },
         });
 
     } catch (err) {
         console.error('login:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: err.message
-        });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  POST /auth/refresh
+//  Now rotates the refresh token on every call
 // ══════════════════════════════════════════════════════════════════════════════
 export const refreshToken = async (req, res) => {
     try {
@@ -232,13 +184,14 @@ export const refreshToken = async (req, res) => {
             return res.status(401).json({ success: false, message: 'No refresh token provided' });
 
         // 1. Verify JWT signature
+        let decoded;
         try {
-            jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+            decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
         } catch {
             return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
         }
 
-        // 2. Confirm token exists in DB and is not expired
+        // 2. Confirm token exists in DB
         const pool = await getPool();
         const result = await pool.request()
             .input('token', sql.VarChar(512), token)
@@ -256,10 +209,23 @@ export const refreshToken = async (req, res) => {
             role:   stored.role,
         });
 
-        res.json({ success: true, accessToken });
+        // 4. Rotate refresh token ← new
+        const newRefreshToken = generateRefreshToken({ userId: stored.UserID });
+
+        await pool.request()
+            .input('oldToken',  sql.VarChar(512), token)
+            .input('newToken',  sql.VarChar(512), newRefreshToken)
+            .input('UserID',    sql.Int,          stored.UserID)
+            .input('expiresAt', sql.DateTime,     refreshTokenExpiryDate())
+            .execute('sp_RotateRefreshToken');
+
+        res.cookie('refreshToken', newRefreshToken, cookieOptions()); // ← set new cookie
+
+        return res.json({ success: true, accessToken });
+
     } catch (err) {
         console.error('refreshToken:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
@@ -277,19 +243,17 @@ export const logout = async (req, res) => {
                 .execute('sp_DeleteRefreshToken');
         }
 
-        res.clearCookie('refreshToken', {
-            httpOnly: true,
-            secure:   process.env.NODE_ENV === 'production',
-        });
+        res.clearCookie('refreshToken', cookieOptions());
         res.json({ success: true, message: 'Logged out successfully' });
+
     } catch (err) {
         console.error('logout:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  POST /auth/logout-all   (revoke all sessions)
+//  POST /auth/logout-all
 // ══════════════════════════════════════════════════════════════════════════════
 export const logoutAll = async (req, res) => {
     try {
@@ -303,19 +267,17 @@ export const logoutAll = async (req, res) => {
             .input('UserID', sql.Int, userId)
             .execute('sp_DeleteAllUserRefreshTokens');
 
-        res.clearCookie('refreshToken', {
-            httpOnly: true,
-            secure:   process.env.NODE_ENV === 'production',
-        });
+        res.clearCookie('refreshToken', cookieOptions());
         res.json({ success: true, message: 'Logged out from all devices' });
+
     } catch (err) {
         console.error('logoutAll:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  GET /auth/me   (current user info)
+//  GET /auth/me
 // ══════════════════════════════════════════════════════════════════════════════
 export const getMe = async (req, res) => {
     try {
@@ -332,10 +294,11 @@ export const getMe = async (req, res) => {
         const user    = result.recordset[0];
         const profile = await getRoleProfile(pool, userId, user.role);
 
-        res.json({ success: true, data: { ...user, profile } });
+        return res.json({ success: true, data: { ...user, profile } });
+
     } catch (err) {
         console.error('getMe:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
@@ -353,25 +316,19 @@ export const changePassword = async (req, res) => {
         if (newPassword.length < 8)
             return res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
 
+        if (currentPassword === newPassword)
+            return res.status(400).json({ success: false, message: 'New password must differ from current password' }); // ← new
+
         const pool = await getPool();
-        
-        // Inline check since the stored procedure for getting user does not return the hash for security
+
         const result = await pool.request()
-            .input('UserID', sql.Int, userId)
-            .query(`
-                SELECT PasswordHash
-                FROM Users
-                WHERE UserID = @UserID
-            `);
+            .input('email', sql.VarChar(255), req.user.email)
+            .execute('sp_GetUserByEmail'); // ← reuse SP instead of inline query
+
         if (!result.recordset.length)
             return res.status(404).json({ success: false, message: 'User not found' });
 
-        const { PasswordHash } = result.recordset[0];
-        const valid = await bcrypt.compare(
-                currentPassword,
-                PasswordHash
-            );
-
+        const valid = await bcrypt.compare(currentPassword, result.recordset[0].PasswordHash);
         if (!valid)
             return res.status(401).json({ success: false, message: 'Current password is incorrect' });
 
@@ -382,75 +339,63 @@ export const changePassword = async (req, res) => {
             .input('passwordHash', sql.VarChar(255), newHash)
             .execute('sp_UpdatePassword');
 
-        // Invalidate all other sessions
         await pool.request()
             .input('UserID', sql.Int, userId)
             .execute('sp_DeleteAllUserRefreshTokens');
 
-        res.json({ success: true, message: 'Password changed. Please log in again.' });
+        res.clearCookie('refreshToken', cookieOptions());
+        return res.json({ success: true, message: 'Password changed. Please log in again.' });
+
     } catch (err) {
         console.error('changePassword:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
-
+// ══════════════════════════════════════════════════════════════════════════════
+//  POST /auth/activate
+// ══════════════════════════════════════════════════════════════════════════════
 export const activateAccount = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'email and password required'
-            });
-        }
+        if (!email || !password)
+            return res.status(400).json({ success: false, message: 'email and password are required' });
+
+        if (password.length < 8)
+            return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
 
         const pool = await getPool();
 
-        // check user
+        // Reuse sp_GetUserByEmail instead of SELECT *
         const userResult = await pool.request()
-            .input('email', sql.NVarChar(150), email)
-            .query('SELECT * FROM Users WHERE Email = @email');
+            .input('email', sql.VarChar(255), email)
+            .execute('sp_GetUserByEmail');
 
-        if (!userResult.recordset.length) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
+        if (!userResult.recordset.length)
+            return res.status(404).json({ success: false, message: 'User not found' });
 
         const user = userResult.recordset[0];
 
-        if (user.IsActive === 1) {
-            return res.status(400).json({
-                success: false,
-                message: 'Account already activated'
-            });
-        }
+        // if (user.IsActive)
+        //     return res.status(400).json({ success: false, message: 'Account already activated' });
 
-        const hash = await bcrypt.hash(password, 10);
+        const hash = await bcrypt.hash(password, 12); // ← consistent cost factor
 
         await pool.request()
-            .input('UserID', sql.Int, user.UserID)
-            .input('PasswordHash', sql.NVarChar(255), hash)
-            .query(`
-                UPDATE Users
-                SET PasswordHash = @PasswordHash,
-                    IsActive = 1
-                WHERE UserID = @UserID
-            `);
+            .input('UserID',       sql.Int,          user.UserID)
+            .input('passwordHash', sql.VarChar(255), hash)
+            .execute('sp_UpdatePassword'); // ← reuse SP + separate IsActive update below
 
-        res.json({
-            success: true,
-            message: 'Account activated successfully'
-        });
+        // Activate the account
+        await pool.request()
+            .input('UserID', sql.Int, user.UserID)
+            .query('UPDATE Users SET IsActive = 1 WHERE UserID = @UserID');
+
+        return res.json({ success: true, message: 'Account activated successfully' });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({
-            success: false,
-            message: err.message
-        });
+        console.error('activateAccount:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };

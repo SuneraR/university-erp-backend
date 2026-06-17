@@ -96,7 +96,7 @@ export const createPayment = async (req, res) => {
       .input('StudentID', sql.VarChar(20), student_id)
       .input('Amount', sql.Decimal(10, 2), amount)
       .input('Type', sql.NVarChar(20), type)
-      .input('Semester', sql.NVarChar(5), semester || null)
+     .input('Semester', sql.NVarChar(10), semester || null)
       .input('PaymentDate', sql.Date, payment_date || null)
       .input('Method', sql.NVarChar(50), method || null)
       .input('Status', sql.NVarChar(20), status || 'Pending')

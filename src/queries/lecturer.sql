@@ -123,73 +123,45 @@ GO
 -- REGISTER LECTURER
 ----------------------------------------------------
 CREATE OR ALTER PROCEDURE sp_RegisterLecturer
-(
-    @Name NVARCHAR(150),
-    @Email NVARCHAR(150),
-    @PasswordHash NVARCHAR(255),
-    @Phone NVARCHAR(30) = NULL,
-    @Gender NVARCHAR(10) = NULL,
-    @DOB DATE = NULL,
-    @Address NVARCHAR(255) = NULL,
-    @AvatarCode NVARCHAR(5) = NULL,
-    @FacultyID INT,
-    @DepartmentID INT,
+    @UserID         INT,
+    @FacultyID      INT,
+    @DepartmentID   INT,
     @Specialization NVARCHAR(150) = NULL,
-    @Rank NVARCHAR(50) = NULL,
-    @JoinedDate DATE = NULL,
-    @NewLecturerID VARCHAR(20) OUTPUT
-)
+    @Rank           NVARCHAR(50)  = NULL,
+    @JoinedDate     DATE          = NULL,
+    @NewLecturerID  VARCHAR(20)   OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Validate user exists and has Lecturer role
+        IF NOT EXISTS (SELECT 1 FROM Users WHERE UserID = @UserID AND Role = 'Lecturer')
+            THROW 50003, 'User not found or is not assigned the Lecturer role.', 1;
 
-    DECLARE @UserID INT;
-    DECLARE @NextNo INT;
+        -- Prevent double registration
+        IF EXISTS (SELECT 1 FROM Lecturers WHERE UserID = @UserID)
+            THROW 50004, 'User is already registered as a Lecturer.', 1;
 
-    IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email)
-    BEGIN
-        RAISERROR('Email already exists.',16,1);
-        RETURN;
-    END
+        -- Validate Faculty
+        IF NOT EXISTS (SELECT 1 FROM Faculties WHERE FacultyID = @FacultyID)
+            THROW 50001, 'Invalid FacultyID.', 1;
 
-    INSERT INTO Users
-    (
-        Email, PasswordHash, Phone, Name, Gender,
-        DOB, Address, AvatarCode, Role
-    )
-    VALUES
-    (
-        @Email, @PasswordHash, @Phone, @Name, @Gender,
-        @DOB, @Address, @AvatarCode, 'Lecturer'
-    );
+        DECLARE @NextNo INT;
+        SELECT @NextNo = COUNT(*) + 1 FROM Lecturers;
 
-    SET @UserID = SCOPE_IDENTITY();
+        SET @NewLecturerID = 'LEC-' + RIGHT('000' + CAST(@NextNo AS VARCHAR(3)), 3);
 
-    SELECT @NextNo = COUNT(*) + 1 FROM Lecturers;
+        INSERT INTO Lecturers (LecturerID, UserID, FacultyID, DepartmentID, Specialization, Rank, JoinedDate)
+        VALUES (@NewLecturerID, @UserID, @FacultyID, @DepartmentID, @Specialization, @Rank,
+                ISNULL(@JoinedDate, CAST(GETDATE() AS DATE)));
 
-    SET @NewLecturerID =
-        'LEC-' + RIGHT('000' + CAST(@NextNo AS VARCHAR(3)), 3);
-
-    INSERT INTO Lecturers
-    (
-        LecturerID,
-        UserID,
-        FacultyID,
-        DepartmentID,
-        Specialization,
-        Rank,
-        JoinedDate
-    )
-    VALUES
-    (
-        @NewLecturerID,
-        @UserID,
-        @FacultyID,
-        @DepartmentID,
-        @Specialization,
-        @Rank,
-        @JoinedDate
-    );
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
 END;
 GO
 

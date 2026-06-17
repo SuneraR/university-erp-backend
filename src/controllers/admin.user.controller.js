@@ -1,215 +1,252 @@
-// 'use strict';
+import { getPool, sql } from '../config/db.js';
 
-// import { getPool, sql } from '../config/db.js';
-// import bcrypt from 'bcryptjs';
+// ══════════════════════════════════════════════════════════════════════════════
+//  POST /auth/users/create
+//  Step 1 — Create base user account (Student or Lecturer)
+// ══════════════════════════════════════════════════════════════════════════════
+export const createUser = async (req, res) => {
+    try {
+        console.log('createUser request body:', req.body);
+        const { email, name, phone, gender, dob, address, role } = req.body;
 
-// export const createAccount = async (req, res) => {
-//     try {
-//         const {
-//             name,
-//             email,
-//             role,
-//             phone,
-//             gender,
-//             dob,
-//             address,
-//             facultyId,
-//             departmentId,
-//             studentId,
-//             lecturerId
-//         } = req.body;
+        // ── validation handled by validateCreateUser middleware ────────────────
 
-//         if (!name || !email || !role) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'name, email, role are required'
-//             });
-//         }
+        const avatarCode = role === 'Student' ? 'ST' : 'LC';
+        const pool       = await getPool();
 
-//         const pool = await getPool();
+        const result = await pool.request()
+            .input('Email',      sql.NVarChar(150), email)
+            .input('Name',       sql.NVarChar(150), name)
+            .input('Phone',      sql.NVarChar(30),  phone   || null)
+            .input('Gender',     sql.NVarChar(10),  gender  || null)
+            .input('DOB',        sql.Date,          dob     || null)
+            .input('Address',    sql.NVarChar(255), address || null)
+            .input('Role',       sql.NVarChar(20),  role)
+            .input('AvatarCode', sql.NVarChar(5),   avatarCode)
+            .execute('sp_CreateUser');
 
-//         // 1. Check email exists
-//         const exists = await pool.request()
-//             .input('email', sql.NVarChar(150), email)
-//             .query('SELECT 1 FROM Users WHERE Email = @email');
+        const userId = result.recordset[0].UserID;
 
-//         if (exists.recordset.length) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Email already exists'
-//             });
-//         }
+        return res.status(201).json({
+            success: true,
+            message: `User account created with role ${role}. Proceed to register as ${role}.`,
+            userId,
+        });
 
-//         // 2. Generate temporary password
-//         const tempPassword = Math.random().toString(36).slice(-8);
-//         const hash = await bcrypt.hash(tempPassword, 10);
+    } catch (err) {
+        if (err.message?.includes('Email already exists')) {
+            return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
+        console.error('createUser:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
 
-//         // 3. Create user
-//         const userResult = await pool.request()
-//             .input('Email', sql.NVarChar(150), email)
-//             .input('PasswordHash', sql.NVarChar(255), hash)
-//             .input('Phone', sql.NVarChar(30), phone || null)
-//             .input('Name', sql.NVarChar(150), name)
-//             .input('Gender', sql.NVarChar(10), gender || null)
-//             .input('DOB', sql.Date, dob || null)
-//             .input('Address', sql.NVarChar(255), address || null)
-//             .input('AvatarCode', sql.NVarChar(5), null)
-//             .input('Role', sql.NVarChar(20), role)
-//             .input('IsActive', sql.Bit, 1)
-//             .query(`
-//                 INSERT INTO Users (
-//                     Email, PasswordHash, Phone, Name,
-//                     Gender, DOB, Address, AvatarCode,
-//                     Role, IsActive
-//                 )
-//                 OUTPUT INSERTED.UserID
-//                 VALUES (
-//                     @Email, @PasswordHash, @Phone, @Name,
-//                     @Gender, @DOB, @Address, @AvatarCode,
-//                     @Role, @IsActive
-//                 )
-//             `);
+// ══════════════════════════════════════════════════════════════════════════════
+//  POST /auth/users/:id/register-student
+//  Step 2a — Register existing user as Student
+// ══════════════════════════════════════════════════════════════════════════════
+export const registerStudent = async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id);
+        const { facultyId, departmentId, program, level } = req.body;
 
-//         const userId = userResult.recordset[0].UserID;
+        const pool = await getPool();
 
-//         // 4. Create Lecturer or Student profile
-//         if (role === 'Student') {
-//             await pool.request()
-//                 .input('StudentID', sql.VarChar(20), studentId)
-//                 .input('UserID', sql.Int, userId)
-//                 .input('FacultyID', sql.Int, facultyId)
-//                 .input('DepartmentID', sql.Int, departmentId)
-//                 .query(`
-//                     INSERT INTO Students (StudentID, UserID, FacultyID, DepartmentID)
-//                     VALUES (@StudentID, @UserID, @FacultyID, @DepartmentID)
-//                 `);
-//         }
+        const result = await pool.request()
+            .input('UserID',       sql.Int,          userId)
+            .input('FacultyID',    sql.Int,          facultyId)
+            .input('DepartmentID', sql.Int,          departmentId || null)
+            .input('Program',      sql.NVarChar(150), program)
+            .input('Level',        sql.Int,          level ? parseInt(level) : 100)
+            .output('NewStudentID', sql.VarChar(20))
+            .execute('sp_RegisterStudent');
 
-//         if (role === 'Lecturer') {
-//             await pool.request()
-//                 .input('LecturerID', sql.VarChar(20), lecturerId)
-//                 .input('UserID', sql.Int, userId)
-//                 .input('FacultyID', sql.Int, facultyId)
-//                 .input('DepartmentID', sql.Int, departmentId)
-//                 .query(`
-//                     INSERT INTO Lecturers (LecturerID, UserID, FacultyID, DepartmentID)
-//                     VALUES (@LecturerID, @UserID, @FacultyID, @DepartmentID)
-//                 `);
-//         }
+        const studentId = result.output.NewStudentID;
 
-//         res.status(201).json({
-//             success: true,
-//             message: 'Account created successfully',
-//             userId,
-//             credentials: {
-//                 email,
-//                 password: tempPassword
-//             }
-//         });
+        return res.status(201).json({
+            success: true,
+            message: 'User registered as Student successfully',
+            studentId,
+        });
 
-//     } catch (err) {
-//         console.error('createAccount:', err);
-//         res.status(500).json({
-//             success: false,
-//             message: err.message
-//         });
-//     }
-// };
+    } catch (err) {
+        if (err.message?.includes('not found or is not assigned the Student role')) {
+            return res.status(400).json({ success: false, message: 'User not found or role is not Student' });
+        }
+        if (err.message?.includes('already registered as a Student')) {
+            return res.status(400).json({ success: false, message: 'User is already registered as a Student' });
+        }
+        if (err.message?.includes('Invalid FacultyID')) {
+            return res.status(400).json({ success: false, message: 'Invalid FacultyID' });
+        }
+        console.error('registerStudent:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
 
-// // ---------------- CREATE USER (STUDENT / LECTURER) ----------------
-// export const createUser = async (req, res) => {
-//     try {
-//         const {
-//             name,
-//             email,
-//             role,          // Student | Lecturer
-//             phone,
-//             facultyId,
-//             departmentId,
-//             studentId,
-//             lecturerId
-//         } = req.body;
+// ══════════════════════════════════════════════════════════════════════════════
+//  POST /auth/users/:id/register-lecturer
+//  Step 2b — Register existing user as Lecturer
+// ══════════════════════════════════════════════════════════════════════════════
+export const registerLecturer = async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id);
+        const { facultyId, departmentId, specialization, rank } = req.body;
 
-//         if (!name || !email || !role) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'name, email, role required'
-//             });
-//         }
+        const pool = await getPool();
 
-//         const pool = await getPool();
+        const result = await pool.request()
+            .input('UserID',         sql.Int,           userId)
+            .input('FacultyID',      sql.Int,           facultyId)
+            .input('DepartmentID',   sql.Int,           departmentId)
+            .input('Specialization', sql.NVarChar(150), specialization || null)
+            .input('Rank',           sql.NVarChar(50),  rank           || null)
+            .output('NewLecturerID', sql.VarChar(20))
+            .execute('sp_RegisterLecturer');
 
-//         // check email exists
-//         const check = await pool.request()
-//             .input('email', sql.NVarChar(150), email)
-//             .query('SELECT 1 FROM Users WHERE Email = @email');
+        const lecturerId = result.output.NewLecturerID;
 
-//         if (check.recordset.length) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Email already exists'
-//             });
-//         }
+        return res.status(201).json({
+            success: true,
+            message: 'User registered as Lecturer successfully',
+            lecturerId,
+        });
 
-//         // generate temporary password
-//         const tempPassword = Math.random().toString(36).slice(-8);
-//         const passwordHash = await bcrypt.hash(tempPassword, 10);
+    } catch (err) {
+        if (err.message?.includes('not found or is not assigned the Lecturer role')) {
+            return res.status(400).json({ success: false, message: 'User not found or role is not Lecturer' });
+        }
+        if (err.message?.includes('already registered as a Lecturer')) {
+            return res.status(400).json({ success: false, message: 'User is already registered as a Lecturer' });
+        }
+        if (err.message?.includes('Invalid FacultyID')) {
+            return res.status(400).json({ success: false, message: 'Invalid FacultyID' });
+        }
+        console.error('registerLecturer:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+// ══════════════════════════════════════════════════════════════════════════════
+//  GET /auth/users
+//  List all users with optional ?role= filter
+// ══════════════════════════════════════════════════════════════════════════════
+export const listUsers = async (req, res) => {
+    try {
+        const { role } = req.query;
 
-//         // create user
-//         const userResult = await pool.request()
-//             .input('Email', sql.NVarChar(150), email)
-//             .input('Name', sql.NVarChar(150), name)
-//             .input('Phone', sql.NVarChar(30), phone || null)
-//             .input('Role', sql.NVarChar(20), role)
-//             .input('PasswordHash', sql.NVarChar(255), passwordHash)
-//             .query(`
-//                 INSERT INTO Users (Email, Name, Phone, Role, PasswordHash, IsActive)
-//                 OUTPUT INSERTED.UserID
-//                 VALUES (@Email, @Name, @Phone, @Role, @PasswordHash, 1)
-//             `);
+        // ── validation handled by validateListUsers middleware ─────────────────
 
-//         const userId = userResult.recordset[0].UserID;
+        const pool    = await getPool();
+        const request = pool.request();
 
-//         // create profile based on role
-//         if (role === 'Student') {
-//             await pool.request()
-//                 .input('StudentID', sql.VarChar(20), studentId)
-//                 .input('UserID', sql.Int, userId)
-//                 .input('FacultyID', sql.Int, facultyId)
-//                 .input('DepartmentID', sql.Int, departmentId)
-//                 .query(`
-//                     INSERT INTO Students (StudentID, UserID, FacultyID, DepartmentID)
-//                     VALUES (@StudentID, @UserID, @FacultyID, @DepartmentID)
-//                 `);
-//         }
+        const query = `
+            SELECT
+                UserID, Email, Name, Phone,
+                Gender, DOB, Address, AvatarCode,
+                Role, IsActive
+            FROM users
+            ${role ? 'WHERE Role = @Role' : ''}
+            ORDER BY UserID DESC
+        `;
 
-//         if (role === 'Lecturer') {
-//             await pool.request()
-//                 .input('LecturerID', sql.VarChar(20), lecturerId)
-//                 .input('UserID', sql.Int, userId)
-//                 .input('FacultyID', sql.Int, facultyId)
-//                 .input('DepartmentID', sql.Int, departmentId)
-//                 .query(`
-//                     INSERT INTO Lecturers (LecturerID, UserID, FacultyID, DepartmentID)
-//                     VALUES (@LecturerID, @UserID, @FacultyID, @DepartmentID)
-//                 `);
-//         }
+        if (role) request.input('Role', sql.NVarChar(20), role);
 
-//         res.status(201).json({
-//             success: true,
-//             message: 'User created successfully',
-//             loginCredentials: {
-//                 email,
-//                 password: tempPassword
-//             },
-//             userId
-//         });
+        const result = await request.query(query);
 
-//     } catch (err) {
-//         console.error(err);
-//         res.status(500).json({
-//             success: false,
-//             message: err.message
-//         });
-//     }
-// };
+        return res.json({
+            success: true,
+            count: result.recordset.length,
+            data:  result.recordset,
+        });
+
+    } catch (err) {
+        console.error('listUsers:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  GET /auth/users/:id
+//  Get single user with role profile
+// ══════════════════════════════════════════════════════════════════════════════
+export const getUserById = async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id);
+
+        // ── validation handled by validateUserId middleware ────────────────────
+
+        const pool   = await getPool();
+        const result = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .execute('sp_GetUserById');
+
+        if (!result.recordset.length)
+            return res.status(404).json({ success: false, message: 'User not found' });
+
+        const user = result.recordset[0];
+
+        let profile = null;
+        if (user.Role === 'Student') {
+            const r = await pool.request()
+                .input('UserID', sql.Int, userId)
+                .execute('sp_GetStudentProfile');
+            profile = r.recordset[0] ?? null;
+        } else if (user.Role === 'Lecturer') {
+            const r = await pool.request()
+                .input('UserID', sql.Int, userId)
+                .execute('sp_GetLecturerProfile');
+            profile = r.recordset[0] ?? null;
+        }
+
+        return res.json({ success: true, data: { ...user, profile } });
+
+    } catch (err) {
+        console.error('getUserById:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PATCH /auth/users/:id/toggle-active
+//  Activate or deactivate any user account
+// ══════════════════════════════════════════════════════════════════════════════
+export const toggleUserActive = async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id);
+
+        // ── validation handled by validateUserId middleware ────────────────────
+
+        const pool    = await getPool();
+        const current = await pool.request()
+            .input('UserID', sql.Int, userId)
+            .execute('sp_GetUserById');
+
+        if (!current.recordset.length)
+            return res.status(404).json({ success: false, message: 'User not found' });
+
+        const newState = current.recordset[0].IsActive ? 0 : 1;
+
+        await pool.request()
+            .input('UserID',   sql.Int, userId)
+            .input('IsActive', sql.Bit, newState)
+            .query('UPDATE users SET IsActive = @IsActive WHERE UserID = @UserID');
+
+        // If deactivating, revoke all active sessions
+        if (newState === 0) {
+            await pool.request()
+                .input('UserID', sql.Int, userId)
+                .execute('sp_DeleteAllUserRefreshTokens');
+        }
+
+        return res.json({
+            success:  true,
+            message:  `User ${newState ? 'activated' : 'deactivated'} successfully`,
+            isActive: Boolean(newState),
+        });
+
+    } catch (err) {
+        console.error('toggleUserActive:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};

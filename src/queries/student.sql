@@ -92,41 +92,31 @@ GO
 --    Auto-generates StudentID: STU-YYYY-NNNN
 -- ============================================================
 CREATE OR ALTER PROCEDURE sp_RegisterStudent
-    @Name        NVARCHAR(150),
-    @Email       NVARCHAR(150),
-    @PasswordHash NVARCHAR(255),
-    @Phone       NVARCHAR(30)  = NULL,
-    @Gender      NVARCHAR(10)  = NULL,
-    @DOB         DATE          = NULL,
-    @Address     NVARCHAR(255) = NULL,
-    @AvatarCode  NVARCHAR(5)   = NULL,
-    @FacultyID   INT,
-    @DepartmentID INT          = NULL,
-    @Program     NVARCHAR(150) = NULL,
-    @Level       INT           = 100,
-    @EnrolledDate DATE         = NULL,
-    @NewStudentID VARCHAR(20)  OUTPUT
+    @UserID        INT,
+    @FacultyID     INT,
+    @DepartmentID  INT          = NULL,
+    @Program       NVARCHAR(150) = NULL,
+    @Level         INT           = 100,
+    @EnrolledDate  DATE         = NULL,
+    @NewStudentID  VARCHAR(20)  OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRANSACTION;
     BEGIN TRY
+        -- Validate user exists and has Student role
+        IF NOT EXISTS (SELECT 1 FROM Users WHERE UserID = @UserID AND Role = 'Student')
+            THROW 50003, 'User not found or is not assigned the Student role.', 1;
+
+        -- Prevent double registration
+        IF EXISTS (SELECT 1 FROM Students WHERE UserID = @UserID)
+            THROW 50004, 'User is already registered as a Student.', 1;
+
         -- Validate Faculty
         IF NOT EXISTS (SELECT 1 FROM Faculties WHERE FacultyID = @FacultyID)
             THROW 50001, 'Invalid FacultyID.', 1;
 
-        -- Validate Email uniqueness
-        IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email)
-            THROW 50002, 'Email already registered.', 1;
-
-        -- Insert User
-        INSERT INTO Users (Email, PasswordHash, Phone, Name, Gender, DOB, Address, AvatarCode, Role)
-        VALUES (@Email, @PasswordHash, @Phone, @Name, @Gender, @DOB, @Address, @AvatarCode, 'Student');
-
-        DECLARE @UserID INT = SCOPE_IDENTITY();
-
-        -- Generate StudentID: STU-YYYY-NNNN
-        DECLARE @Year CHAR(4)  = CAST(YEAR(GETDATE()) AS CHAR(4));
+        DECLARE @Year CHAR(4) = CAST(YEAR(GETDATE()) AS CHAR(4));
         DECLARE @Seq  INT;
 
         SELECT @Seq = ISNULL(MAX(CAST(RIGHT(StudentID, 4) AS INT)), 0) + 1
@@ -135,7 +125,6 @@ BEGIN
 
         SET @NewStudentID = 'STU-' + @Year + '-' + RIGHT('0000' + CAST(@Seq AS VARCHAR), 4);
 
-        -- Insert Student
         INSERT INTO Students (StudentID, UserID, FacultyID, DepartmentID, Program, Level, Status, EnrolledDate)
         VALUES (@NewStudentID, @UserID, @FacultyID, @DepartmentID, @Program, @Level, 'Active',
                 ISNULL(@EnrolledDate, CAST(GETDATE() AS DATE)));

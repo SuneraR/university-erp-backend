@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 //  authenticate  —  verifies the Bearer access token on every protected route
 // ══════════════════════════════════════════════════════════════════════════════
 export const authenticate = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ success: false, message: 'Access token required' });
@@ -44,24 +44,45 @@ export const authorizeRoles = (...roles) => (req, res, next) => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  Convenience role guards (shorthand wrappers)
+//  Convenience role guards
+//  - isAdmin    : Admin only
+//  - isLecturer : Lecturer + Admin (Admin can do anything a Lecturer can)
+//  - isStudent  : Student only  — Admin should NOT access personal student routes
+//                 (grades, exam submissions, etc.)
 // ══════════════════════════════════════════════════════════════════════════════
 export const isAdmin    = authorizeRoles('Admin');
-export const isLecturer = authorizeRoles('Lecturer', 'Admin');   // Admin can do anything a Lecturer can
-export const isStudent  = authorizeRoles('Student', 'Admin');
+export const isLecturer = authorizeRoles('Lecturer', 'Admin');
+export const isStudent  = authorizeRoles('Student');         // ← Admin removed
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  optionalAuth  —  attaches req.user if a valid token is present, but never
 //                   blocks the request
 // ══════════════════════════════════════════════════════════════════════════════
 export const optionalAuth = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;           // ← consistent casing
     if (authHeader?.startsWith('Bearer ')) {
         try {
             req.user = jwt.verify(authHeader.split(' ')[1], process.env.JWT_ACCESS_SECRET);
-        } catch {
-            // silently ignore invalid / expired token
+        } catch (err) {
+            if (!(err instanceof jwt.JsonWebTokenError)) {
+                console.error('optionalAuth unexpected error:', err);  // ← narrow catch
+            }
+            // silently ignore JWT errors — don't block the request
         }
     }
     next();
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  validateSecrets  —  call once at app startup to fail fast if JWT secrets
+//                      are missing from the environment
+// ══════════════════════════════════════════════════════════════════════════════
+export const validateSecrets = () => {
+    const missing = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'].filter(
+        (key) => !process.env[key]
+    );
+    if (missing.length) {
+        console.error(`FATAL: Missing environment variable(s): ${missing.join(', ')}`);
+        process.exit(1);
+    }
 };
