@@ -7,6 +7,8 @@ import miscRoutes from './routes/misc.student.routes.js';
 import financeRoutes from './routes/finance.routes.js';
 import examinationRoutes from './routes/examination.routes.js';
 import courseRoutes from './routes/course.routes.js';
+import lecturerRoutes from './routes/lecturer.routes.js';
+
 
 const app = express();
 
@@ -19,6 +21,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/examinations', examinationRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api', miscRoutes);
+app.use('/api/lecturers', lecturerRoutes);
 
 app.get('/health', (_req, res) =>
   res.json({ status: 'ok', timestamp: new Date() })
