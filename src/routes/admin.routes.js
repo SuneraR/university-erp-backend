@@ -1,9 +1,11 @@
-// import express from 'express';
-// import { createUser } from '../controllers/admin.user.controller.js';
-// import { authenticate, isAdmin } from '../middleware/auth.middleware.js';
+import express from 'express';
+import { authenticate, isAdmin } from '../middleware/auth.middleware.js';
+import { enrollStudent } from '../controllers/admin.user.controller.js';
 
-// const router = express.Router();
+const router = express.Router();
 
-// router.post('/users', authenticate, isAdmin, createUser);
+// admin.routes.js
+router.post('/users/:id/student-enrollment', authenticate, isAdmin, enrollStudent);
 
-// export default router;
+
+export default router;

@@ -227,11 +227,15 @@ export const getEnrollments = async (req, res) => {
     const pool = await getPool();
 
     const result = await pool.request()
-      .input('StudentID', sql.VarChar(20), req.params.id)
+      // 1. Change 'StudentID' to 'UserID'
+      // 2. Change sql.VarChar to sql.Int
+      // 3. Parse the req.params.id to an integer
+      .input('UserID', sql.Int, parseInt(req.params.id, 10))
       .input('Semester', sql.Int, req.query.semester ? parseInt(req.query.semester) : null)
       .execute('sp_GetStudentEnrollments');
 
     res.json({ success: true, data: result.recordset });
+    console.log(result.recordset);
   } catch (err) {
     handleError(res, err, 'getEnrollments');
   }

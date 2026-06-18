@@ -231,8 +231,8 @@ GO
 -- 6. STUDENT ENROLLMENTS  (courses the student is enrolled in)
 -- ============================================================
 CREATE OR ALTER PROCEDURE sp_GetStudentEnrollments
-    @StudentID VARCHAR(20),
-    @Semester  INT = NULL
+    @UserID INT,  -- Changed from @StudentID VARCHAR(20)
+    @Semester INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -253,12 +253,13 @@ BEGIN
         e.Semester,
         e.EnrolledDate
     FROM Enrollments e
+    JOIN Students    s ON s.StudentID    = e.StudentID  -- NEW: Bridge the Enrollment to the Student
     JOIN Courses     c ON c.CourseID     = e.CourseID
     JOIN Faculties   f ON f.FacultyID    = c.FacultyID
     JOIN Departments d ON d.DepartmentID = c.DepartmentID
     LEFT JOIN Lecturers lec ON lec.LecturerID = c.LecturerID
     LEFT JOIN Users l_u     ON l_u.UserID     = lec.UserID
-    WHERE e.StudentID = @StudentID
+    WHERE s.UserID = @UserID                            -- CHANGED: Filter by the UserID instead
       AND (@Semester IS NULL OR e.Semester = @Semester)
     ORDER BY e.Semester DESC, c.CourseID;
 END;

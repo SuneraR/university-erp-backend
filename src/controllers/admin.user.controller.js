@@ -250,3 +250,33 @@ export const toggleUserActive = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Server error' });
     }
 };
+
+export const enrollStudent = async (req, res) => {
+  try {
+    const { courseId, semester } = req.body;
+
+    if (!courseId || !semester) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId and semester are required',
+      });
+    }
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input('StudentID', sql.VarChar(20), req.params.id)
+      .input('CourseID', sql.VarChar(20), courseId)
+      .input('Semester', sql.Int, parseInt(semester))
+      .output('NewEnrollmentID', sql.Int)
+      .execute('sp_EnrollStudent');
+
+    res.status(201).json({
+      success: true,
+      message: 'Student enrolled successfully',
+      enrollmentId: result.output.NewEnrollmentID,
+    });
+  } catch (err) {
+    handleError(res, err, 'enrollStudent');
+  }
+};

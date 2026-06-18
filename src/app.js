@@ -9,6 +9,7 @@ import financeRoutes from './routes/finance.routes.js';
 import examinationRoutes from './routes/examination.routes.js';
 import courseRoutes from './routes/course.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import lecturerRoutes from './routes/lecturer.routes.js';
 
 const app = express();
@@ -27,7 +28,7 @@ app.use('/api/examinations', examinationRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api', miscRoutes);
 app.use('/api/auth', authRoutes);
-// app.use('/api/admin', adminRoutes);
+app.use('/api', adminRoutes);
 app.use('/api/lecturers', lecturerRoutes);
 
 app.get('/health', (_req, res) =>
