@@ -463,3 +463,26 @@ export const addScholarship = async (req, res) => {
     handleError(res, err, 'addScholarship');
   }
 };
+
+export const getStudentByUserId = async (req, res) => {
+  try {
+    // Security: students can only fetch their own profile
+    if (req.user.role === 'Student' && req.user.userId !== parseInt(req.params.user_id)) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('UserID', sql.Int, req.params.user_id)
+      .execute('sp_GetStudentByUserID');
+
+    if (!result.recordset.length) {
+      return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (err) {
+    handleError(res, err, 'getStudentByUserId');
+  }
+};

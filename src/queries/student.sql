@@ -238,19 +238,20 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT
+        SELECT
         e.EnrollmentID,
         e.CourseID,
-        c.Title       AS CourseTitle,
-        c.Credits,
-        c.Level,
-        c.Mode,
+        c.Title       AS title,       -- Changed to lowercase 'title'
+        c.Credits     AS credits,     -- Changed to lowercase 'credits'
+        c.Level       AS level,       -- Changed to lowercase 'level'
+        c.Mode        AS mode,        -- Changed to lowercase 'mode'
         c.ScheduleDays,
         c.ScheduleTime,
-        c.Room,
-        f.Name        AS Faculty,
-        d.Name        AS Department,
-        l_u.Name      AS LecturerName,
-        e.Semester,
+        c.Room        AS room,        -- Changed to lowercase 'room'
+        f.Name        AS FacultyName, -- React expects FacultyName
+        d.Name        AS DepartmentName, -- React expects DepartmentName
+        l_u.Name      AS LecturerName, 
+        e.Semester    AS semester,    -- Changed to lowercase 'semester'
         e.EnrolledDate
     FROM Enrollments e
     JOIN Students    s ON s.StudentID    = e.StudentID  -- NEW: Bridge the Enrollment to the Student
@@ -668,3 +669,31 @@ BEGIN
     ORDER BY StudentCount DESC;
 END;
 GO
+CREATE OR ALTER PROCEDURE sp_GetStudentByUserID
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT
+        s.StudentID,
+        u.Name          AS FullName,
+        u.Email,
+        u.Phone,
+        u.Gender,
+        u.DOB,
+        u.Address,
+        u.AvatarCode,
+        f.Name          AS Faculty,
+        d.Name          AS Department,
+        s.Program,
+        s.Level,
+        s.GPA,
+        s.Status,
+        s.EnrolledDate,
+        u.CreatedAt
+    FROM Students s
+    JOIN Users        u ON u.UserID      = s.UserID
+    JOIN Faculties    f ON f.FacultyID   = s.FacultyID
+    LEFT JOIN Departments d ON d.DepartmentID = s.DepartmentID
+    WHERE s.UserID = @UserID;
+END;

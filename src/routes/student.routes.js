@@ -2,46 +2,47 @@
 
 import express from 'express';
 import * as ctrl from '../controllers/student.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
 // ─── Students ─────────────────────────────────────────────
 
-router.get('/', ctrl.getStudents);
-router.post('/', ctrl.registerStudent);
+router.get('/', authenticate,ctrl.getStudents);
+router.post('/', authenticate, ctrl.registerStudent);
+router.get('/by-user/:user_id', authenticate, ctrl.getStudentByUserId);
+router.get('/stats', authenticate, ctrl.getStudentStats);
 
-router.get('/stats', ctrl.getStudentStats);
-
-router.get('/:id', ctrl.getStudentById);
-router.patch('/:id', ctrl.updateStudent);
-router.delete('/:id', ctrl.deleteStudent);
+router.get('/:id', authenticate, ctrl.getStudentById);
+router.patch('/:id', authenticate, ctrl.updateStudent);
+router.delete('/:id', authenticate, ctrl.deleteStudent);
 
 // ─── Summary ─────────────────────────────────────────────
 
-router.get('/:id/summary', ctrl.getStudentSummary);
+router.get('/:id/summary', authenticate, ctrl.getStudentSummary);
 
 // ─── Enrollments ─────────────────────────────────────────
 
-router.get('/:id/enrollments', ctrl.getEnrollments);
-router.post('/:id/enrollments', ctrl.enrollStudent);
-router.delete('/:id/enrollments', ctrl.dropEnrollment);
+router.get('/:id/enrollments', authenticate, ctrl.getEnrollments);
+router.post('/:id/enrollments', authenticate, ctrl.enrollStudent);
+router.delete('/:id/enrollments', authenticate, ctrl.dropEnrollment);
 
 // ─── Attendance ──────────────────────────────────────────
 
-router.get('/:id/attendance', ctrl.getAttendance);
+router.get('/:id/attendance', authenticate, ctrl.getAttendance);
 
 // ─── Results ─────────────────────────────────────────────
 
-router.get('/:id/results', ctrl.getResults);
+router.get('/:id/results', authenticate, ctrl.getResults);
 
 // ─── Payments ────────────────────────────────────────────
 
-router.get('/:id/payments', ctrl.getPayments);
-router.post('/:id/payments', ctrl.createPayment);
+router.get('/:id/payments',     authenticate, ctrl.getPayments);
+router.post('/:id/payments', authenticate, ctrl.createPayment);
 
 // ─── Scholarships ────────────────────────────────────────
 
-router.get('/:id/scholarships', ctrl.getScholarships);
-router.post('/:id/scholarships', ctrl.addScholarship);
+router.get('/:id/scholarships', authenticate, ctrl.getScholarships);
+router.post('/:id/scholarships', authenticate, ctrl.addScholarship);
 
 export default router;
